@@ -1,4 +1,4 @@
-import RegisterUserModel from "../model/login/Login.model.js";
+import RegisterUserModel from "../model/login.model.js";
 import jwt from "jsonwebtoken";
 
 import express from "express";
