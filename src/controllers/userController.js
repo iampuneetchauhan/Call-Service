@@ -1,7 +1,6 @@
 import RegisterUserModel from "../model/login.model.js";
 import jwt from "jsonwebtoken";
 
-import express from "express";
 export const verifyToken = (req, res, next) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ message: "Token missing" });
