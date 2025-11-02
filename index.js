@@ -14,11 +14,18 @@ const app = express();
 app.use(express.json());
 app.use(
   cors({
-    origin: "*",
+    origin: [
+      "http://localhost:5173", // local dev
+      "https://call-service-dipu.vercel.app",
+      "*", // your frontend production domain
+    ],
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: true,
   })
 );
+
+app.options("*", cors());
 
 // ✅ Connect MongoDB
 const connectDB = async () => {
@@ -55,7 +62,7 @@ const attachSocket = (server) => {
   const io = new Server(server, {
     cors: {
       origin: "*",
-      methods: ["GET", "POST"],
+      methods: ["GET", "POST", "PUT", "DELETE"],
     },
   });
 
