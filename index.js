@@ -5,16 +5,34 @@ import { Server } from "socket.io";
 import dotenv from "dotenv";
 import { v4 as uuidv4 } from "uuid";
 import connection from "./src/config/db/connection.config.js";
-import callHandler from "./src/controllers/CallController.js"; // ✅ import your socket call handler
+import callHandler from "./src/controllers/CallController.js";
+import router from "./src/routes/router.js"; // ✅ your main routes file
 
 dotenv.config();
 
-// --- App setup ---
 const app = express();
 app.use(express.json());
 app.use(cors());
 
-// --- HTTP + Socket.IO server setup ---
+// ✅ Connect MongoDB
+const connectDB = async () => {
+  try {
+    await connection();
+    console.log("✅ MongoDB connected successfully");
+  } catch (err) {
+    console.error("❌ MongoDB connection failed:", err.message);
+  }
+};
+
+// ✅ Health check
+app.get("/", (req, res) => {
+  res.send("🚀 Backend + Socket.IO + MongoDB running successfully");
+});
+
+// ✅ API routes
+app.use("/api", router); // all routes defined inside router.js will work with /api prefix
+
+// ✅ Create HTTP server + Socket.IO setup
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
@@ -23,10 +41,10 @@ const io = new Server(httpServer, {
   },
 });
 
-// --- In-memory room storage ---
+// ✅ In-memory room store
 const rooms = new Map();
 
-// --- REST API: create/join a room ---
+// ✅ REST API to join or create a room
 app.post("/join", (req, res) => {
   let { roomId } = req.body || {};
   if (!roomId) roomId = uuidv4();
@@ -35,12 +53,7 @@ app.post("/join", (req, res) => {
   res.json({ roomId });
 });
 
-// --- Health Check ---
-app.get("/", (req, res) => {
-  res.send("🚀 Signaling + MongoDB + CallHandler server running successfully");
-});
-
-// --- Socket.IO Logic ---
+// ✅ Socket.IO handling
 io.on("connection", (socket) => {
   console.log("🔌 Socket connected:", socket.id);
 
@@ -51,10 +64,8 @@ io.on("connection", (socket) => {
     if (!rooms.has(roomId)) rooms.set(roomId, { clients: new Set() });
     rooms.get(roomId).clients.add(socket.id);
 
-    // Notify other clients in the room
     socket.to(roomId).emit("peer-joined", { socketId: socket.id, userId });
 
-    // Send current participants back to the joiner
     const others = Array.from(rooms.get(roomId).clients).filter(
       (id) => id !== socket.id
     );
@@ -69,9 +80,7 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("leave", ({ roomId }) => {
-    leaveRoom(socket, roomId);
-  });
+  socket.on("leave", ({ roomId }) => leaveRoom(socket, roomId));
 
   socket.on("disconnect", () => {
     console.log("❌ Socket disconnected:", socket.id);
@@ -93,18 +102,12 @@ io.on("connection", (socket) => {
   }
 });
 
-// --- Use Call Handler ---
-callHandler(io); // ✅ attaches user-to-user calling logic
+// ✅ Attach user-to-user call controller logic
+callHandler(io);
 
-const startServer = async () => {
-  try {
-    await connection(); // Connect to MongoDB first
-    app.listen(process.env.PORT || 3000, () => {
-      console.log("🚀 Server is running on port:", process.env.PORT || 3000);
-    });
-  } catch (e) {
-    console.error("❌ Error in connecting with MongoDB:", e);
-  }
-};
-
-startServer();
+// ✅ Start server
+const PORT = process.env.PORT || 3000;
+httpServer.listen(PORT, async () => {
+  await connectDB();
+  console.log(`🚀 Server is running on port ${PORT}`);
+});
