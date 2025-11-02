@@ -6,13 +6,19 @@ import dotenv from "dotenv";
 import { v4 as uuidv4 } from "uuid";
 import connection from "./src/config/db/connection.config.js";
 import callHandler from "./src/controllers/CallController.js";
-import router from "./src/routes/routes.js"; 
+import router from "./src/routes/routes.js";
 
 dotenv.config();
 
 const app = express();
 app.use(express.json());
-app.use(cors());
+app.use(
+  cors({
+    origin: "*",
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
 
 // ✅ Connect MongoDB
 const connectDB = async () => {
