@@ -62,8 +62,10 @@ export const loginUser = async (req, res) => {
     const token = existingUser.generateToken();
 
     return res.status(200).json({
-      message: `Welcome ${existingUser.name}`,
-      token,
+      token: {
+        accessToken: token,
+        expiresIn: "2h",
+      },
       user: {
         _id: existingUser._id,
         name: existingUser.name,
