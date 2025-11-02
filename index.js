@@ -25,7 +25,7 @@ app.use(
   })
 );
 
-app.options("*", cors());
+
 
 // ✅ Connect MongoDB
 const connectDB = async () => {
