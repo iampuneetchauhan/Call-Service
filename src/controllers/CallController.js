@@ -4,9 +4,10 @@ export default function callHandler(io) {
   io.on("connection", (socket) => {
     console.log("🟢 Socket connected:", socket.id);
 
-    // Register user with socket
+    // Register user
     socket.on("register-user", ({ userId }) => {
       userSocketMap.set(userId, socket.id);
+      socket.data.userId = userId; // store for later use
       console.log(`✅ User ${userId} registered with socket ${socket.id}`);
     });
 
@@ -21,26 +22,31 @@ export default function callHandler(io) {
       }
     });
 
-    // Receiver accepts/rejects call
+    // Receiver accepts/rejects
     socket.on("call-response", ({ from, to, accepted }) => {
       const callerSocket = userSocketMap.get(from);
       if (callerSocket) {
         io.to(callerSocket).emit("call-response", { from: to, accepted });
-        console.log(
-          `📲 Call ${accepted ? "accepted" : "rejected"} by ${to} for ${from}`
-        );
       }
     });
 
-    // WebRTC signaling exchange
+    // WebRTC signaling
     socket.on("signal", ({ to, data }) => {
       const targetSocket = userSocketMap.get(to);
       if (targetSocket) {
-        io.to(targetSocket).emit("signal", { from: socket.id, data });
+        io.to(targetSocket).emit("signal", { from: socket.data.userId, data });
       }
     });
 
-    // Handle disconnect
+    // Hang up call
+    socket.on("hangup", ({ from }) => {
+      for (const [uid, sid] of userSocketMap.entries()) {
+        if (uid !== from) io.to(sid).emit("hangup");
+      }
+      console.log(`📴 ${from} ended call`);
+    });
+
+    // Disconnect
     socket.on("disconnect", () => {
       for (const [uid, sid] of userSocketMap.entries()) {
         if (sid === socket.id) userSocketMap.delete(uid);
