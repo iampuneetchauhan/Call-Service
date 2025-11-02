@@ -6,7 +6,7 @@ import dotenv from "dotenv";
 import { v4 as uuidv4 } from "uuid";
 import connection from "./src/config/db/connection.config.js";
 import callHandler from "./src/controllers/CallController.js";
-import router from "./src/routes/router.js"; // ✅ your main routes file
+import router from "./src/routes/routes.js"; 
 
 dotenv.config();
 
