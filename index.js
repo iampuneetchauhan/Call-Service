@@ -3,7 +3,6 @@ import cors from "cors";
 import { createServer } from "http";
 import { Server } from "socket.io";
 import dotenv from "dotenv";
-import { v4 as uuidv4 } from "uuid";
 import connection from "./src/config/db/connection.config.js";
 import callHandler from "./src/controllers/CallController.js";
 import router from "./src/routes/routes.js";
@@ -17,7 +16,7 @@ app.use(express.json());
 // ✅ Proper dynamic CORS setup
 const allowedOrigins = [
   "http://localhost:5173", // local dev
-  "https://call-service-dipu.vercel.app", // deployed frontend
+  "https://letsconnect-online.netlify.app/", // deployed frontend
 ];
 
 app.use(

@@ -1,8 +1,5 @@
-import connectController from "../controllers/ConnectController.js";
-
-export default function callHandler(io, app) {
+export default function callHandler(io, userSocketMap) {
   // Global map: userId -> socketId
-  const userSocketMap = new Map();
 
   // ✅ Attach Socket.IO listeners
   io.on("connection", (socket) => {
@@ -61,7 +58,4 @@ export default function callHandler(io, app) {
       console.log("🔴 Socket disconnected:", socket.id);
     });
   });
-
-  // ✅ Attach REST API for initiating connection (frontend -> backend -> socket emit)
-  app.post("/api/connect", connectController(io, userSocketMap));
 }
