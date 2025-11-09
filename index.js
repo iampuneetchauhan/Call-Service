@@ -7,25 +7,33 @@ import { v4 as uuidv4 } from "uuid";
 import connection from "./src/config/db/connection.config.js";
 import callHandler from "./src/controllers/CallController.js";
 import router from "./src/routes/routes.js";
+import callRoutes from "./src/routes/Call.routes.js";
 
 dotenv.config();
 
 const app = express();
 app.use(express.json());
+
+// ✅ Proper dynamic CORS setup
+const allowedOrigins = [
+  "http://localhost:5173",
+  "https://call-service-dipu.vercel.app",
+];
+
 app.use(
   cors({
-    origin: [
-      "http://localhost:5173", // local dev
-      "https://call-service-dipu.vercel.app",
-      "*", // your frontend production domain
-    ],
+    origin: function (origin, callback) {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true,
   })
 );
-
-
 
 // ✅ Connect MongoDB
 const connectDB = async () => {
@@ -45,24 +53,16 @@ app.get("/", (req, res) => {
 // ✅ API routes
 app.use("/api", router);
 
-// ✅ In-memory room store
+// ✅ In-memory store for active rooms
 const rooms = new Map();
 
-// ✅ Join / Create room route
-app.post("/join", (req, res) => {
-  let { roomId } = req.body || {};
-  if (!roomId) roomId = uuidv4();
-
-  if (!rooms.has(roomId)) rooms.set(roomId, { clients: new Set() });
-  res.json({ roomId });
-});
-
-// ✅ Function to attach socket.io
-const attachSocket = (server) => {
+// ✅ Socket.IO attachment function
+const attachSocket = (server, userSocketMap) => {
   const io = new Server(server, {
     cors: {
-      origin: "*",
-      methods: ["GET", "POST", "PUT", "DELETE"],
+      origin: allowedOrigins,
+      methods: ["GET", "POST"],
+      credentials: true,
     },
   });
 
@@ -70,7 +70,7 @@ const attachSocket = (server) => {
     console.log("🔌 Socket connected:", socket.id);
 
     socket.on("join", ({ roomId, userId }) => {
-      console.log(`📞 Socket ${socket.id} joining room ${roomId}`);
+      console.log(`📞 ${userId || "Unknown"} joined room ${roomId}`);
       socket.join(roomId);
 
       if (!rooms.has(roomId)) rooms.set(roomId, { clients: new Set() });
@@ -97,9 +97,7 @@ const attachSocket = (server) => {
     socket.on("disconnect", () => {
       console.log("❌ Socket disconnected:", socket.id);
       for (const [roomId, room] of rooms.entries()) {
-        if (room.clients.has(socket.id)) {
-          leaveRoom(socket, roomId);
-        }
+        if (room.clients.has(socket.id)) leaveRoom(socket, roomId);
       }
     });
 
@@ -114,25 +112,29 @@ const attachSocket = (server) => {
     }
   });
 
-  callHandler(io);
+  // ✅ Call logic handler
+  callHandler(io, app, userSocketMap);
   return io;
 };
 
-// ✅ Create server only if not running in Vercel (serverless)
+// ✅ Vercel compatibility
 if (process.env.VERCEL) {
   console.log("⚡ Running in Vercel Serverless Mode");
   const server = createServer(app);
-  attachSocket(server);
+  const userSocketMap = new Map();
+  attachSocket(server, userSocketMap);
+  app.use("/api", callRoutes(server, userSocketMap));
   connectDB();
-  // export default app; // moved to top-level export below for module compatibility
 } else {
   const server = createServer(app);
-  attachSocket(server);
+  const userSocketMap = new Map();
+  attachSocket(server, userSocketMap);
+  app.use("/api", callRoutes(server, userSocketMap));
 
   const PORT = process.env.PORT || 3000;
   server.listen(PORT, async () => {
     await connectDB();
-    console.log(`🚀 Server is running on port ${PORT}`);
+    console.log(`🚀 Server running on port ${PORT}`);
   });
 }
 

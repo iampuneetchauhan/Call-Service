@@ -1,17 +1,21 @@
-export default function callHandler(io) {
-  const userSocketMap = new Map(); // userId -> socketId
+import connectController from "../controllers/ConnectController.js";
 
+export default function callHandler(io, app) {
+  // Global map: userId -> socketId
+  const userSocketMap = new Map();
+
+  // ✅ Attach Socket.IO listeners
   io.on("connection", (socket) => {
     console.log("🟢 Socket connected:", socket.id);
 
-    // Register user
+    // ✅ Register user with socket
     socket.on("register-user", ({ userId }) => {
       userSocketMap.set(userId, socket.id);
-      socket.data.userId = userId; // store for later use
+      socket.data.userId = userId;
       console.log(`✅ User ${userId} registered with socket ${socket.id}`);
     });
 
-    // Caller initiates call
+    // ✅ Caller initiates call directly via socket
     socket.on("call-user", ({ from, to }) => {
       const receiverSocket = userSocketMap.get(to);
       if (receiverSocket) {
@@ -22,15 +26,18 @@ export default function callHandler(io) {
       }
     });
 
-    // Receiver accepts/rejects
+    // ✅ Receiver accepts/rejects
     socket.on("call-response", ({ from, to, accepted }) => {
       const callerSocket = userSocketMap.get(from);
       if (callerSocket) {
         io.to(callerSocket).emit("call-response", { from: to, accepted });
+        console.log(
+          `📲 Call ${accepted ? "accepted" : "rejected"} by ${to} for ${from}`
+        );
       }
     });
 
-    // WebRTC signaling
+    // ✅ WebRTC signaling exchange
     socket.on("signal", ({ to, data }) => {
       const targetSocket = userSocketMap.get(to);
       if (targetSocket) {
@@ -38,7 +45,7 @@ export default function callHandler(io) {
       }
     });
 
-    // Hang up call
+    // ✅ Hang up
     socket.on("hangup", ({ from }) => {
       for (const [uid, sid] of userSocketMap.entries()) {
         if (uid !== from) io.to(sid).emit("hangup");
@@ -46,7 +53,7 @@ export default function callHandler(io) {
       console.log(`📴 ${from} ended call`);
     });
 
-    // Disconnect
+    // ✅ Handle disconnect
     socket.on("disconnect", () => {
       for (const [uid, sid] of userSocketMap.entries()) {
         if (sid === socket.id) userSocketMap.delete(uid);
@@ -54,4 +61,7 @@ export default function callHandler(io) {
       console.log("🔴 Socket disconnected:", socket.id);
     });
   });
+
+  // ✅ Attach REST API for initiating connection (frontend -> backend -> socket emit)
+  app.post("/api/connect", connectController(io, userSocketMap));
 }
