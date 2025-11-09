@@ -16,7 +16,8 @@ app.use(express.json());
 // ✅ Proper dynamic CORS setup
 const allowedOrigins = [
   "http://localhost:5173", // local dev
-  "https://letsconnect-online.netlify.app/", // deployed frontend
+  "https://letsconnect-online.netlify.app/",
+  "*", // deployed frontend
 ];
 
 app.use(
