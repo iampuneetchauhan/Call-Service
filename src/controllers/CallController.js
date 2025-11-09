@@ -1,9 +1,6 @@
 export default function callHandler(io, userSocketMap) {
   // Global map: userId -> socketId
-  if (!(userSocketMap instanceof Map)) {
-    console.error("❌ userSocketMap is not a Map:", typeof userSocketMap);
-    return res.status(500).json({ error: "Internal socket mapping error" });
-  }
+
   // ✅ Attach Socket.IO listeners
   io.on("connection", (socket) => {
     console.log("🟢 Socket connected:", socket.id);
