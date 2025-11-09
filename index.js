@@ -16,8 +16,8 @@ app.use(express.json());
 
 // ✅ Proper dynamic CORS setup
 const allowedOrigins = [
-  "http://localhost:5173",
-  "https://call-service-dipu.vercel.app",
+  "http://localhost:5173", // local dev
+  "https://call-service-dipu.vercel.app", // deployed frontend
 ];
 
 app.use(
@@ -45,18 +45,18 @@ const connectDB = async () => {
   }
 };
 
-// ✅ Health check
+// ✅ Health check route
 app.get("/", (req, res) => {
   res.send("🚀 Backend + Socket.IO + MongoDB running successfully");
 });
 
-// ✅ API routes
+// ✅ Normal REST routes
 app.use("/api", router);
 
 // ✅ In-memory store for active rooms
 const rooms = new Map();
 
-// ✅ Socket.IO attachment function
+// ✅ Socket.IO attachment
 const attachSocket = (server, userSocketMap) => {
   const io = new Server(server, {
     cors: {
@@ -69,6 +69,7 @@ const attachSocket = (server, userSocketMap) => {
   io.on("connection", (socket) => {
     console.log("🔌 Socket connected:", socket.id);
 
+    // ✅ Join room
     socket.on("join", ({ roomId, userId }) => {
       console.log(`📞 ${userId || "Unknown"} joined room ${roomId}`);
       socket.join(roomId);
@@ -84,6 +85,7 @@ const attachSocket = (server, userSocketMap) => {
       socket.emit("joined", { roomId, participants: others });
     });
 
+    // ✅ WebRTC signaling exchange
     socket.on("signal", ({ roomId, to, data }) => {
       if (to) {
         io.to(to).emit("signal", { from: socket.id, data });
@@ -92,8 +94,10 @@ const attachSocket = (server, userSocketMap) => {
       }
     });
 
+    // ✅ Leave manually
     socket.on("leave", ({ roomId }) => leaveRoom(socket, roomId));
 
+    // ✅ Disconnect cleanup
     socket.on("disconnect", () => {
       console.log("❌ Socket disconnected:", socket.id);
       for (const [roomId, room] of rooms.entries()) {
@@ -112,25 +116,24 @@ const attachSocket = (server, userSocketMap) => {
     }
   });
 
-  // ✅ Call logic handler
+  // ✅ Attach call controller
   callHandler(io, app, userSocketMap);
+
   return io;
 };
 
-// ✅ Vercel compatibility
+// ✅ Start logic (Local + Vercel both)
+const userSocketMap = new Map();
+const server = createServer(app);
+const io = attachSocket(server, userSocketMap);
+
+// ✅ REST call routes
+app.use("/api", callRoutes(io, userSocketMap));
+
 if (process.env.VERCEL) {
   console.log("⚡ Running in Vercel Serverless Mode");
-  const server = createServer(app);
-  const userSocketMap = new Map();
-  attachSocket(server, userSocketMap);
-  app.use("/api", callRoutes(server, userSocketMap));
   connectDB();
 } else {
-  const server = createServer(app);
-  const userSocketMap = new Map();
-  attachSocket(server, userSocketMap);
-  app.use("/api", callRoutes(server, userSocketMap));
-
   const PORT = process.env.PORT || 3000;
   server.listen(PORT, async () => {
     await connectDB();
