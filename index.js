@@ -13,18 +13,21 @@ dotenv.config();
 const app = express();
 app.use(express.json());
 
-// ✅ Dynamic CORS setup
+// ✅ Proper dynamic CORS setup
 const allowedOrigins = [
-  "http://localhost:5173",
+  "http://localhost:5173", // local dev
   "https://letsconnect-online.netlify.app",
-  "*",
+  "*", // deployed frontend
 ];
 
 app.use(
   cors({
     origin: function (origin, callback) {
-      if (!origin || allowedOrigins.includes(origin)) callback(null, true);
-      else callback(new Error("Not allowed by CORS"));
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
     },
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
@@ -32,7 +35,7 @@ app.use(
   })
 );
 
-// ✅ MongoDB connection
+// ✅ Connect MongoDB
 const connectDB = async () => {
   try {
     await connection();
@@ -42,7 +45,7 @@ const connectDB = async () => {
   }
 };
 
-// ✅ Health check
+// ✅ Health check route
 app.get("/", (req, res) => {
   res.send("🚀 Backend + Socket.IO + MongoDB running successfully");
 });
@@ -50,12 +53,11 @@ app.get("/", (req, res) => {
 // ✅ Normal REST routes
 app.use("/api", router);
 
-// ✅ Global state maps
+// ✅ In-memory store for active rooms
 const rooms = new Map();
-const userSocketMap = new Map();
 
-// ✅ Socket setup
-const attachSocket = (server) => {
+// ✅ Socket.IO attachment
+const attachSocket = (server, userSocketMap) => {
   const io = new Server(server, {
     cors: {
       origin: allowedOrigins,
@@ -67,14 +69,7 @@ const attachSocket = (server) => {
   io.on("connection", (socket) => {
     console.log("🔌 Socket connected:", socket.id);
 
-    // ✅ Register user with socket
-    socket.on("register-user", ({ userId }) => {
-      userSocketMap.set(userId, socket.id);
-      socket.data.userId = userId;
-      console.log(`✅ User ${userId} registered with socket ${socket.id}`);
-    });
-
-    // ✅ Join room (for calls)
+    // ✅ Join room
     socket.on("join", ({ roomId, userId }) => {
       console.log(`📞 ${userId || "Unknown"} joined room ${roomId}`);
       socket.join(roomId);
@@ -82,7 +77,6 @@ const attachSocket = (server) => {
       if (!rooms.has(roomId)) rooms.set(roomId, { clients: new Set() });
       rooms.get(roomId).clients.add(socket.id);
 
-      // Notify others in room
       socket.to(roomId).emit("peer-joined", { socketId: socket.id, userId });
 
       const others = Array.from(rooms.get(roomId).clients).filter(
@@ -91,41 +85,26 @@ const attachSocket = (server) => {
       socket.emit("joined", { roomId, participants: others });
     });
 
-    // ✅ WebRTC signaling
+    // ✅ WebRTC signaling exchange
     socket.on("signal", ({ roomId, to, data }) => {
-      if (to) io.to(to).emit("signal", { from: socket.id, data });
-      else socket.to(roomId).emit("signal", { from: socket.id, data });
-    });
-
-    // ✅ Leave call manually
-    socket.on("leave", ({ roomId }) => {
-      leaveRoom(socket, roomId);
-    });
-
-    // ✅ Handle hangup (for one-to-one calls)
-    socket.on("hangup", ({ from }) => {
-      for (const [uid, sid] of userSocketMap.entries()) {
-        if (uid !== from) io.to(sid).emit("hangup");
+      if (to) {
+        io.to(to).emit("signal", { from: socket.id, data });
+      } else {
+        socket.to(roomId).emit("signal", { from: socket.id, data });
       }
-      console.log(`📴 ${from} ended call`);
     });
 
-    // ✅ Handle disconnect safely
+    // ✅ Leave manually
+    socket.on("leave", ({ roomId }) => leaveRoom(socket, roomId));
+
+    // ✅ Disconnect cleanup
     socket.on("disconnect", () => {
       console.log("❌ Socket disconnected:", socket.id);
-
-      // Clean up user map
-      for (const [uid, sid] of userSocketMap.entries()) {
-        if (sid === socket.id) userSocketMap.delete(uid);
-      }
-
-      // Clean up rooms
       for (const [roomId, room] of rooms.entries()) {
         if (room.clients.has(socket.id)) leaveRoom(socket, roomId);
       }
     });
 
-    // ✅ Helper to clean up rooms
     function leaveRoom(socket, roomId) {
       socket.leave(roomId);
       if (rooms.has(roomId)) {
@@ -137,20 +116,20 @@ const attachSocket = (server) => {
     }
   });
 
-  // ✅ Attach call controller endpoints (REST + Socket bridge)
+  // ✅ Attach call controller
   callHandler(io, app, userSocketMap);
 
   return io;
 };
 
-// ✅ Initialize server
+// ✅ Start logic (Local + Vercel both)
+const userSocketMap = new Map();
 const server = createServer(app);
-const io = attachSocket(server);
+const io = attachSocket(server, userSocketMap);
 
-// ✅ Attach REST call routes once
+// ✅ REST call routes
 app.use("/api", callRoutes(io, userSocketMap));
 
-// ✅ Server start
 if (process.env.VERCEL) {
   console.log("⚡ Running in Vercel Serverless Mode");
   connectDB();
