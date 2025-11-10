@@ -17,7 +17,7 @@ app.use(express.json());
 const allowedOrigins = [
   "http://localhost:5173", // local dev
   "https://letsconnect-online.netlify.app",
-  "https://celadon-unicorn-399a9c.netlify.app/",
+  "https://celadon-unicorn-399a9c.netlify.app",
   "*", // deployed frontend
 ];
 
