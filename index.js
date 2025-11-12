@@ -18,6 +18,7 @@ const allowedOrigins = [
   "http://localhost:5173", // local dev
   "https://letsconnect-online.netlify.app",
   "https://celadon-unicorn-399a9c.netlify.app",
+  "https://lets-connect-onlinev2.netlify.app",
   "*", // deployed frontend
 ];
 
