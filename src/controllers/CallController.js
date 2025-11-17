@@ -1,61 +1,39 @@
-export default function callHandler(io, userSocketMap) {
-  // Global map: userId -> socketId
+export default function callHandler(io, userSocketMap, socket) {
+  socket.on("register-user", ({ userId }) => {
+    userSocketMap.set(userId, socket.id);
+    socket.data.userId = userId;
+  });
 
-  // ✅ Attach Socket.IO listeners
-  io.on("connection", (socket) => {
-    console.log("🟢 Socket connected:", socket.id);
+  // Caller sends invite
+  socket.on("call-user", ({ from, to, roomId }) => {
+    const target = userSocketMap.get(to);
+    if (target) {
+      io.to(target).emit("incoming-call", { from, roomId });
+    }
+  });
 
-    // ✅ Register user with socket
-    socket.on("register-user", ({ userId }) => {
-      userSocketMap.set(userId, socket.id);
-      socket.data.userId = userId;
-      console.log(`✅ User ${userId} registered with socket ${socket.id}`);
-    });
+  // Accept/Reject
+  socket.on("call-response", ({ from, to, accepted, roomId }) => {
+    const caller = userSocketMap.get(from);
+    if (caller) {
+      io.to(caller).emit("call-response", {
+        accepted,
+        from: to,
+        roomId,
+      });
+    }
+  });
 
-    // ✅ Caller initiates call directly via socket
-    socket.on("call-user", ({ from, to }) => {
-      const receiverSocket = userSocketMap.get(to);
-      if (receiverSocket) {
-        io.to(receiverSocket).emit("incoming-call", { from });
-        console.log(`📞 Incoming call from ${from} to ${to}`);
-      } else {
-        socket.emit("user-offline", { to });
-      }
-    });
+  // hangup
+  socket.on("hangup", ({ from, to }) => {
+    const target = userSocketMap.get(to);
+    if (target) io.to(target).emit("hangup", { from });
+  });
 
-    // ✅ Receiver accepts/rejects
-    socket.on("call-response", ({ from, to, accepted }) => {
-      const callerSocket = userSocketMap.get(from);
-      if (callerSocket) {
-        io.to(callerSocket).emit("call-response", { from: to, accepted });
-        console.log(
-          `📲 Call ${accepted ? "accepted" : "rejected"} by ${to} for ${from}`
-        );
-      }
-    });
-
-    // ✅ WebRTC signaling exchange
-    socket.on("signal", ({ to, data }) => {
-      const targetSocket = userSocketMap.get(to);
-      if (targetSocket) {
-        io.to(targetSocket).emit("signal", { from: socket.data.userId, data });
-      }
-    });
-
-    // ✅ Hang up
-    socket.on("hangup", ({ from }) => {
-      for (const [uid, sid] of userSocketMap.entries()) {
-        if (uid !== from) io.to(sid).emit("hangup");
-      }
-      console.log(`📴 ${from} ended call`);
-    });
-
-    // ✅ Handle disconnect
-    socket.on("disconnect", () => {
-      for (const [uid, sid] of userSocketMap.entries()) {
-        if (sid === socket.id) userSocketMap.delete(uid);
-      }
-      console.log("🔴 Socket disconnected:", socket.id);
-    });
+  // disconnect remove user
+  socket.on("disconnect", () => {
+    for (const [k, v] of userSocketMap.entries()) {
+      if (v === socket.id) userSocketMap.delete(k);
+    }
   });
 }

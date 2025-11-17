@@ -13,125 +13,146 @@ dotenv.config();
 const app = express();
 app.use(express.json());
 
-// ✅ Proper dynamic CORS setup
+// =========================
+//   CORS FIX
+// =========================
 const allowedOrigins = [
-  "http://localhost:5173", // local dev
+  "http://localhost:5173",
   "https://letsconnect-online.netlify.app",
-  "*", // deployed frontend
+  "*",
 ];
 
 app.use(
   cors({
-    origin: function (origin, callback) {
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error("Not allowed by CORS"));
-      }
-    },
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    origin: (origin, cb) =>
+      !origin || allowedOrigins.includes(origin)
+        ? cb(null, true)
+        : cb(new Error("Blocked by CORS")),
     credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE"],
   })
 );
 
-// ✅ Connect MongoDB
+// =========================
+//   DB CONNECTION
+// =========================
 const connectDB = async () => {
   try {
     await connection();
-    console.log("✅ MongoDB connected successfully");
+    console.log("✅ MongoDB connected");
   } catch (err) {
-    console.error("❌ MongoDB connection failed:", err.message);
+    console.log("❌ MongoDB ERROR:", err.message);
   }
 };
 
-// ✅ Health check route
-app.get("/", (req, res) => {
-  res.send("🚀 Backend + Socket.IO + MongoDB running successfully");
-});
+app.get("/", (req, res) =>
+  res.send("🚀 Backend + Socket.IO + MongoDB running successfully")
+);
 
-// ✅ Normal REST routes
+// Normal REST routes
 app.use("/api", router);
 
-// ✅ In-memory store for active rooms
+// =========================
+//   SOCKET.IO SETUP
+// =========================
 const rooms = new Map();
-
-// ✅ Socket.IO attachment
-const attachSocket = (server, userSocketMap) => {
-  const io = new Server(server, {
-    cors: {
-      origin: allowedOrigins,
-      methods: ["GET", "POST"],
-      credentials: true,
-    },
-  });
-
-  io.on("connection", (socket) => {
-    console.log("🔌 Socket connected:", socket.id);
-
-    // ✅ Join room
-    socket.on("join", ({ roomId, userId }) => {
-      console.log(`📞 ${userId || "Unknown"} joined room ${roomId}`);
-      socket.join(roomId);
-
-      if (!rooms.has(roomId)) rooms.set(roomId, { clients: new Set() });
-      rooms.get(roomId).clients.add(socket.id);
-
-      socket.to(roomId).emit("peer-joined", { socketId: socket.id, userId });
-
-      const others = Array.from(rooms.get(roomId).clients).filter(
-        (id) => id !== socket.id
-      );
-      socket.emit("joined", { roomId, participants: others });
-    });
-
-    // ✅ WebRTC signaling exchange
-    socket.on("signal", ({ roomId, to, data }) => {
-      if (to) {
-        io.to(to).emit("signal", { from: socket.id, data });
-      } else {
-        socket.to(roomId).emit("signal", { from: socket.id, data });
-      }
-    });
-
-    // ✅ Leave manually
-    socket.on("leave", ({ roomId }) => leaveRoom(socket, roomId));
-
-    // ✅ Disconnect cleanup
-    socket.on("disconnect", () => {
-      console.log("❌ Socket disconnected:", socket.id);
-      for (const [roomId, room] of rooms.entries()) {
-        if (room.clients.has(socket.id)) leaveRoom(socket, roomId);
-      }
-    });
-
-    function leaveRoom(socket, roomId) {
-      socket.leave(roomId);
-      if (rooms.has(roomId)) {
-        const room = rooms.get(roomId);
-        room.clients.delete(socket.id);
-        socket.to(roomId).emit("peer-left", { socketId: socket.id });
-        if (room.clients.size === 0) rooms.delete(roomId);
-      }
-    }
-  });
-
-  // ✅ Attach call controller
-  callHandler(io, app, userSocketMap);
-
-  return io;
-};
-
-// ✅ Start logic (Local + Vercel both)
 const userSocketMap = new Map();
-const server = createServer(app);
-const io = attachSocket(server, userSocketMap);
 
-// ✅ REST call routes
+const server = createServer(app);
+
+// 1️⃣ FIRST create io
+const io = new Server(server, {
+  cors: {
+    origin: allowedOrigins,
+    credentials: true,
+    methods: ["GET", "POST"],
+  },
+});
+
+// 2️⃣ THEN pass io to handler
+io.on("connection", (socket) => {
+  console.log("🔌:", socket.id);
+
+  // -----------------------
+  // ROOM CREATION / JOINING
+  // -----------------------
+  socket.on("create-room", ({ roomId, userId }) => {
+    socket.join(roomId);
+    socket.data.roomId = roomId;
+    socket.data.userId = userId;
+
+    if (!rooms.has(roomId)) rooms.set(roomId, new Set());
+    rooms.get(roomId).add(socket.id);
+
+    console.log(`📞 Room created: ${roomId}`);
+    socket.emit("room-created", { roomId });
+  });
+
+  socket.on("join-room", ({ roomId, userId }) => {
+    socket.join(roomId);
+    socket.data.roomId = roomId;
+    socket.data.userId = userId;
+
+    if (!rooms.has(roomId)) rooms.set(roomId, new Set());
+    rooms.get(roomId).add(socket.id);
+
+    socket.to(roomId).emit("peer-joined", {
+      socketId: socket.id,
+      userId,
+    });
+
+    socket.emit("joined", {
+      participants: Array.from(rooms.get(roomId)).filter(
+        (id) => id !== socket.id
+      ),
+    });
+
+    console.log(`👤 ${userId} joined ${roomId}`);
+  });
+
+  // -----------------------
+  // WEBRTC SIGNALING
+  // -----------------------
+  socket.on("signal", ({ to, data }) => {
+    io.to(to).emit("signal", {
+      from: socket.id,
+      data,
+    });
+  });
+
+  // -----------------------
+  // CALL INVITE HANDLER
+  // -----------------------
+  callHandler(io, userSocketMap, socket);
+
+  // -----------------------
+  // DISCONNECT CLEANUP
+  // -----------------------
+  socket.on("disconnect", () => {
+    const roomId = socket.data.roomId;
+
+    if (roomId && rooms.has(roomId)) {
+      rooms.get(roomId).delete(socket.id);
+      socket.to(roomId).emit("peer-left", { socketId: socket.id });
+
+      if (rooms.get(roomId).size === 0) rooms.delete(roomId);
+    }
+
+    for (const [uid, sid] of userSocketMap.entries()) {
+      if (sid === socket.id) userSocketMap.delete(uid);
+    }
+
+    console.log("❌:", socket.id);
+  });
+});
+
+// REST callRoutes AFTER io exists
 app.use("/api", callRoutes(io, userSocketMap));
 
+// =========================
+// START SERVER
+// =========================
 if (process.env.VERCEL) {
-  console.log("⚡ Running in Vercel Serverless Mode");
   connectDB();
 } else {
   const PORT = process.env.PORT || 3000;
